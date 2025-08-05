@@ -603,146 +603,10 @@
     <script>
         document.addEventListener('DOMContentLoaded', () => {
 
-            // --- SIMULATED BACKEND ---
-            // This object mimics a real backend API, storing data in a single object.
-            // It uses Session Storage to persist data across page reloads.
-            const backend = {
-                data: JSON.parse(sessionStorage.getItem('mythAI_backend_data')) || {
-                    users: {
-                        'admin': {
-                            password: 'admin123',
-                            role: 'admin'
-                        }
-                    },
-                    promoCodes: {},
-                    siteStatus: { isMaintenanceMode: false, message: "We'll be back soon!" },
-                },
-
-                save() {
-                    sessionStorage.setItem('mythAI_backend_data', JSON.stringify(this.data));
-                },
-
-                // --- Auth Endpoints ---
-                async login(username, password) {
-                    await new Promise(resolve => setTimeout(resolve, 500)); // Simulate network delay
-                    if (this.data.users[username] && this.data.users[username].password === password) {
-                        const user = this.data.users[username];
-                        const role = user.role || 'user';
-                        const token = `mock-jwt-token-for-${username}-${role}`;
-                        return { success: true, token, user };
-                    }
-                    if (username === 'admin' && password === 'admin123') {
-                        const token = `mock-jwt-token-for-admin-admin`;
-                        return { success: true, token, user: { username: 'admin', role: 'admin' } };
-                    }
-                    return { success: false, error: 'Invalid username or password.' };
-                },
-                async register(username, password) {
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                    if (this.data.users[username]) {
-                        return { success: false, error: 'Username already exists.' };
-                    }
-                    const newUser = {
-                        password: password,
-                        chats: {},
-                        unlockedModels: ["G-4 Fusion"],
-                        activeModel: "G-4 Fusion",
-                        avatarColor: `hsl(${Math.random() * 360}, 50%, 50%)`,
-                        role: 'user'
-                    };
-                    this.data.users[username] = newUser;
-                    this.save();
-                    const token = `mock-jwt-token-for-${username}-user`;
-                    return { success: true, token, user: newUser };
-                },
-
-                // --- User Endpoints ---
-                async getUserData(username) {
-                    await new Promise(resolve => setTimeout(resolve, 300));
-                    return { success: true, user: this.data.users[username] };
-                },
-                async addChat(username, chatId, message) {
-                    await new Promise(resolve => setTimeout(resolve, 300));
-                    if (!this.data.users[username].chats[chatId]) {
-                        this.data.users[username].chats[chatId] = { id: chatId, timestamp: Date.now(), title: 'New Chat', messages: [] };
-                    }
-                    this.data.users[username].chats[chatId].messages.push(message);
-                    this.save();
-                    return { success: true };
-                },
-                async redeemCode(username, code) {
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                    const codeData = this.data.promoCodes[code];
-                    const user = this.data.users[username];
-
-                    if (!codeData || new Date(codeData.expiry) < new Date()) {
-                        return { success: false, error: 'Invalid or expired code.' };
-                    }
-                    if (user.unlockedModels.includes(codeData.model)) {
-                        return { success: false, error: 'Model already unlocked.' };
-                    }
-
-                    user.unlockedModels.push(codeData.model);
-                    this.save();
-                    return { success: true, message: `${codeData.model} unlocked!`, user };
-                },
-                async updatePassword(username, currentPassword, newPassword) {
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                    const user = this.data.users[username];
-                    if (user.password !== currentPassword) {
-                        return { success: false, error: 'Current password does not match.' };
-                    }
-                    user.password = newPassword;
-                    this.save();
-                    return { success: true, message: 'Password updated successfully!' };
-                },
-
-                // --- Admin Endpoints ---
-                async getAdminDashboard() {
-                    await new Promise(resolve => setTimeout(resolve, 300));
-                    const userCount = Object.keys(this.data.users).length - 1; // Exclude admin
-                    const totalChats = Object.values(this.data.users).reduce((acc, user) => acc + Object.keys(user.chats || {}).length, 0);
-                    const activeCodes = Object.values(this.data.promoCodes).filter(c => new Date(c.expiry) > new Date()).length;
-                    return {
-                        success: true,
-                        stats: { userCount, totalChats, activeCodes },
-                        users: this.data.users,
-                        promoCodes: this.data.promoCodes,
-                        siteStatus: this.data.siteStatus
-                    };
-                },
-                async generateCode(code, model, expiry) {
-                    await new Promise(resolve => setTimeout(resolve, 300));
-                    if (this.data.promoCodes[code]) {
-                        return { success: false, error: 'Code already exists.' };
-                    }
-                    this.data.promoCodes[code] = { model, expiry };
-                    this.save();
-                    return { success: true, message: 'Promo code generated.' };
-                },
-                async deleteCode(code) {
-                    await new Promise(resolve => setTimeout(resolve, 300));
-                    if (!this.data.promoCodes[code]) {
-                        return { success: false, error: 'Code not found.' };
-                    }
-                    delete this.data.promoCodes[code];
-                    this.save();
-                    return { success: true, message: 'Code deleted.' };
-                },
-                async updateSiteStatus(isMaintenanceMode, message) {
-                    await new Promise(resolve => setTimeout(resolve, 300));
-                    this.data.siteStatus = { isMaintenanceMode, message };
-                    this.save();
-                    return { success: true, message: 'Site status updated.' };
-                }
-            };
-
             // --- STATE MANAGEMENT ---
             let currentUser = null;
             let userToken = null;
-            let users = {};
-            let promoCodes = {};
-            let siteStatus = {};
+            let users = {}; // This will now be a cache for user data
             let activeChatId = null;
             let isAITyping = false;
             let aiResponseTimeout = null;
@@ -795,7 +659,8 @@
             const uploadFileBtn = document.getElementById('upload-file-btn');
             const modelSwitcher = document.getElementById('model-switcher');
 
-            const API_BASE_URL = '/api';
+            // --- API CONFIGURATION ---
+            const API_BASE_URL = 'https://server-9awj.onrender.com/api';
 
             // --- UI & RENDERING ---
             const toggleSidebar = (forceClose = false) => {
@@ -970,6 +835,7 @@
             };
             const updateModelSwitcher = () => {
                 const user = users[currentUser];
+                if (!user || !user.unlockedModels) return;
                 modelSwitcher.innerHTML = '';
                 user.unlockedModels.forEach(model => {
                     const option = document.createElement('option');
@@ -981,68 +847,45 @@
                     modelSwitcher.appendChild(option);
                 });
             };
+            
+            // This function is now a placeholder. A real implementation would call the backend.
             const getAIResponse = (inputText, model) => {
                 showTypingIndicator();
-                const delay = model === 'G-4 Flash' ? 800 : (model === 'MYTHMAX6' ? 2000 : 1500);
+                const delay = 1500; 
                 aiResponseTimeout = setTimeout(async () => {
                     removeTypingIndicator();
-                    const lowerInput = inputText.toLowerCase();
-                    let reply = { text: "", options: [] };
-                    const responses = {
-                        "G-4 Fusion": {
-                            default: "I'm not quite sure how to answer that. Could you try rephrasing?",
-                            hello: `Hello there, ${currentUser}! How can I help you today?`,
-                            name: "I am Myth AI, running on the G-4 Fusion model.",
-                            code: "```javascript\n// G-4 Fusion Example\nconsole.log('Hello, World!');\n```",
-                            image: "That's an image. I can't analyze it with this model."
-                        },
-                        "G-4 Flash": {
-                            default: "I don't have information on that. I'm optimized for speed.",
-                            hello: `Hi, ${currentUser}. What do you need?`,
-                            name: "Myth AI, G-4 Flash model. Fast and to the point.",
-                            code: "```python\n# G-4 Flash Example\nprint('Hello, World!')\n```",
-                            time: `The time is ${new Date().toLocaleTimeString()}.`,
-                            image: "An image! Looks interesting. What is it?",
-                            options: ["What's the date?", "Tell me a quick fact"]
-                        },
-                        "MYTHMAX6": {
-                            default: "That's a complex question. Let me try to break it down. Based on my training data, the answer could be multifaceted...",
-                            hello: `Greetings, ${currentUser}. It's a pleasure to connect. What intellectual journey shall we embark on today?`,
-                            name: "You're speaking with Myth AI, currently operating on the MYTHMAX6 architecture, my most advanced configuration.",
-                            code: "```python\n# MYTHMAX6 Advanced Example\nclass Greeter:\n    def __init__(self, name):\n        self.name = name\n\n    def greet(self):\n        print(f'Hello, {self.name}!')\n\n# Usage\ng = Greeter('World')\ng.greet()\n```",
-                            time: `According to my internal chronometer, the precise time is ${new Date().toLocaleTimeString('en-US', { hour12: true, second: '2-digit' })}.`,
-                            date: `Today's date is ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}.`,
-                            location: "My systems are distributed, but I see your access point is near Yorkton, Saskatchewan, Canada.",
-                            poem: "Of course. Here is a short poem about the digital sea:\n\nLines of light, a silent hum,\nWhere data streams and futures come.\nA world of thought, in circuits cast,\nA digital shadow, built to last.",
-                            image: "Thank you for sharing this image. Based on a visual analysis, it appears to be [simulated analysis]. What would you like to know about it?",
-                            options: ["Explain that in simpler terms", "Write a haiku about that", "Who are you?"]
-                        }
-                    };
-                    const currentModelResponses = responses[model] || responses["G-4 Fusion"];
-                    let responseKey = 'default';
-                    if (lowerInput.includes("[image received]")) responseKey = 'image';
-                    else if (lowerInput.includes('hello') || lowerInput.includes('hi')) responseKey = 'hello';
-                    else if (lowerInput.includes('your name')) responseKey = 'name';
-                    else if (lowerInput.includes('write') && lowerInput.includes('code')) responseKey = 'code';
-                    else if (lowerInput.includes('time')) responseKey = 'time';
-                    else if (lowerInput.includes('date') && model === 'MYTHMAX6') responseKey = 'date';
-                    else if (lowerInput.includes('location') && model === 'MYTHMAX6') responseKey = 'location';
-                    else if (lowerInput.includes('poem') && model === 'MYTHMAX6') responseKey = 'poem';
-                    reply.text = currentModelResponses[responseKey] || currentModelResponses.default;
-                    if (currentModelResponses.options) {
-                        reply.options = currentModelResponses.options;
-                    }
+                    // In a real app, you would make a fetch call to your backend here
+                    // to get a response from a real AI model.
+                    const reply = { text: `This is a simulated response for the model: ${model}. In a real app, this would come from an AI.`, options: [] };
+                    
                     const aiMessage = { sender: 'ai', content: reply.text, type: 'text', options: reply.options, model: model };
-                    const addMessageResult = await backend.addChat(currentUser, activeChatId, aiMessage);
-                    if (addMessageResult.success) {
-                        users[currentUser].chats[activeChatId].messages.push(aiMessage);
-                        addMessageToDOM('ai', reply.text, 'text', reply.options);
+                    
+                    // Add message to local state
+                    users[currentUser].chats[activeChatId].messages.push(aiMessage);
+                    addMessageToDOM('ai', reply.text, 'text', reply.options);
+                    
+                    // Persist to backend (fire and forget)
+                    try {
+                        await fetch(`${API_BASE_URL}/user/chats`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': `Bearer ${userToken}`
+                            },
+                            body: JSON.stringify({ chatId: activeChatId, message: aiMessage })
+                        });
+                    } catch (error) {
+                        console.error("Failed to save AI message to backend:", error);
                     }
                 }, delay);
             };
-            const createNewChat = async () => {
+
+            const createNewChat = () => {
                 const newChatId = `chat_${Date.now()}`;
                 const user = users[currentUser];
+                if (!user.chats) {
+                    user.chats = {};
+                }
                 user.chats[newChatId] = {
                     id: newChatId,
                     timestamp: Date.now(),
@@ -1050,12 +893,12 @@
                     messages: []
                 };
                 activeChatId = newChatId;
-                await backend.addChat(currentUser, newChatId, {}); // Save the new chat
                 renderActiveChat();
                 renderChatHistoryList();
                 toggleSidebar(true);
             };
-            const summarizeChatForTitle = async (chatId) => {
+
+            const summarizeChatForTitle = (chatId) => {
                 const chat = users[currentUser].chats[chatId];
                 if (chat && chat.messages.length > 0) {
                     const firstUserMessage = chat.messages.find(m => m.sender === 'user' && m.type === 'text');
@@ -1077,43 +920,72 @@
                     loginError.textContent = 'Username and password are required.';
                     return;
                 }
-                const loginResult = await backend.login(username, password);
-                if (loginResult.success) {
-                    userToken = loginResult.token;
-                    currentUser = username;
-                    if (loginResult.user.role === 'user') {
-                        const userFetchResult = await backend.getUserData(currentUser);
-                        users[currentUser] = userFetchResult.user;
-                    } else {
-                        // For admin, just set the username
-                        users[currentUser] = { role: 'admin' };
-                    }
-                    startApp();
-                } else {
-                    loginError.textContent = loginResult.error;
-                }
-            };
-            const handleSocialLogin = async (provider) => {
-                const username = `${provider}_user`;
-                const loginResult = await backend.login(username, 'social_login_mock_password');
-                if (loginResult.success) {
-                    userToken = loginResult.token;
-                    currentUser = username;
-                    const userFetchResult = await backend.getUserData(currentUser);
-                    users[currentUser] = userFetchResult.user;
-                    startApp();
-                } else {
-                    const registerResult = await backend.register(username, 'social_login_mock_password');
-                    if (registerResult.success) {
-                        userToken = registerResult.token;
+
+                try {
+                    const response = await fetch(`${API_BASE_URL}/auth/login`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ username, password })
+                    });
+                    const data = await response.json();
+
+                    if (response.ok) {
+                        userToken = data.token;
                         currentUser = username;
-                        users[currentUser] = registerResult.user;
+                        users[currentUser] = data.user;
+                        sessionStorage.setItem('mythAI_token', userToken);
+                        sessionStorage.setItem('mythAI_currentUser', currentUser);
                         startApp();
                     } else {
-                        alert(registerResult.error);
+                        loginError.textContent = data.error || 'Login failed.';
                     }
+                } catch (error) {
+                    console.error("Login Error:", error);
+                    loginError.textContent = 'Cannot connect to server.';
                 }
             };
+
+            const handleSocialLogin = async (provider) => {
+                // This is a mock social login. Real implementation requires OAuth2.
+                const username = `${provider}_user`;
+                const password = `social_mock_password`;
+                loginError.textContent = '';
+
+                try {
+                    // First, try to log in
+                    let response = await fetch(`${API_BASE_URL}/auth/login`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ username, password })
+                    });
+
+                    // If login fails (user doesn't exist), try to register
+                    if (!response.ok) {
+                        response = await fetch(`${API_BASE_URL}/auth/register`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ username, password })
+                        });
+                    }
+                    
+                    const data = await response.json();
+
+                    if (response.ok) {
+                        userToken = data.token;
+                        currentUser = username;
+                        users[currentUser] = data.user;
+                        sessionStorage.setItem('mythAI_token', userToken);
+                        sessionStorage.setItem('mythAI_currentUser', currentUser);
+                        startApp();
+                    } else {
+                        loginError.textContent = data.error || 'Social login failed.';
+                    }
+                } catch (error) {
+                    console.error("Social Login Error:", error);
+                    loginError.textContent = 'Cannot connect to server.';
+                }
+            };
+            
             const handleLogout = (isAdminLogout = false) => {
                 currentUser = null;
                 activeChatId = null;
@@ -1132,63 +1004,61 @@
 
             // --- UPGRADE & ADMIN LOGIC ---
             const handlePurchase = async (modelName) => {
-                const user = users[currentUser];
-                if (!user.unlockedModels.includes(modelName)) {
-                    user.unlockedModels.push(modelName);
-                    alert(`${modelName} unlocked successfully!`);
-                    updateModelSwitcher();
-                    // In a real app, this would also hit a backend endpoint
-                } else {
-                    alert(`You have already unlocked ${modelName}.`);
-                }
+                alert(`In a real application, this would trigger a purchase flow for ${modelName}.`);
                 closeModal(upgradeModal);
             };
 
             const handleRedeemCode = async () => {
                 const code = promoCodeInput.value.trim().toUpperCase();
                 redeemStatus.textContent = '';
-                redeemStatus.style.color = 'white';
-                redeemStatus.textContent = 'Redeeming...';
                 if (!code) {
                     redeemStatus.style.color = 'red';
                     redeemStatus.textContent = 'Please enter a code.';
                     return;
                 }
+                
+                redeemStatus.textContent = 'Redeeming...';
                 try {
-                    const result = await backend.redeemCode(currentUser, code);
-                    if (result.success) {
+                    const response = await fetch(`${API_BASE_URL}/user/redeem`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${userToken}`
+                        },
+                        body: JSON.stringify({ code })
+                    });
+                    const data = await response.json();
+                    if(response.ok) {
                         redeemStatus.style.color = 'lightgreen';
-                        redeemStatus.textContent = result.message;
-                        users[currentUser] = result.user;
+                        redeemStatus.textContent = data.message;
+                        users[currentUser] = data.user; // Update user data with new models
                         updateModelSwitcher();
                     } else {
                         redeemStatus.style.color = 'red';
-                        redeemStatus.textContent = result.error;
+                        redeemStatus.textContent = data.error || 'Failed to redeem code.';
                     }
                 } catch (error) {
-                    console.error('Redeem Code Error:', error);
+                    console.error("Redeem code error:", error);
                     redeemStatus.style.color = 'red';
-                    redeemStatus.textContent = 'Could not connect to the server.';
+                    redeemStatus.textContent = 'Could not connect to server.';
                 }
-                promoCodeInput.value = '';
             };
 
             const renderAdminDashboard = async () => {
                 try {
-                    const result = await backend.getAdminDashboard();
-                    if (result.success) {
-                        const { stats, users: allUsers, promoCodes: allCodes, siteStatus: currentStatus } = result;
-                        users = allUsers; // Update local user list from "backend"
-                        promoCodes = allCodes; // Update promo codes
-                        siteStatus = currentStatus; // Update site status
+                    const response = await fetch(`${API_BASE_URL}/admin/dashboard`, {
+                        headers: { 'Authorization': `Bearer ${userToken}` }
+                    });
+                    const data = await response.json();
 
-                        document.getElementById('admin-total-users').textContent = stats.userCount;
-                        document.getElementById('admin-total-chats').textContent = stats.totalChats;
-                        document.getElementById('admin-active-codes').textContent = stats.activeCodes;
+                    if (response.ok) {
+                        const { userCount, totalChats, activeCodes, users: allUsers, promoCodes: allCodes, siteStatus: currentStatus } = data;
+                        document.getElementById('admin-total-users').textContent = userCount;
+                        document.getElementById('admin-total-chats').textContent = totalChats;
+                        document.getElementById('admin-active-codes').textContent = activeCodes;
 
                         adminUserList.innerHTML = '';
-                        Object.keys(users).forEach(username => {
-                            if (username === 'admin') return;
+                        Object.keys(allUsers).filter(u => u !== 'admin').forEach(username => {
                             const div = document.createElement('div');
                             div.className = 'text-sm p-2 bg-white/5 rounded';
                             div.textContent = username;
@@ -1196,8 +1066,8 @@
                         });
 
                         activeCodesTable.innerHTML = '';
-                        Object.keys(promoCodes).forEach(code => {
-                            const codeData = promoCodes[code];
+                        Object.keys(allCodes).forEach(code => {
+                            const codeData = allCodes[code];
                             const expiryDate = new Date(codeData.expiry);
                             const isExpired = expiryDate < new Date();
                             const tr = document.createElement('tr');
@@ -1210,20 +1080,22 @@
                             `;
                             activeCodesTable.appendChild(tr);
                         });
+
                         document.querySelectorAll('.delete-code-btn').forEach(btn => {
                             btn.addEventListener('click', async (e) => {
                                 const codeToDelete = e.currentTarget.dataset.code;
-                                await backend.deleteCode(codeToDelete);
+                                await fetch(`${API_BASE_URL}/admin/promo-codes/${codeToDelete}`, {
+                                    method: 'DELETE',
+                                    headers: { 'Authorization': `Bearer ${userToken}` }
+                                });
                                 renderAdminDashboard();
                             });
                         });
 
-                        maintenanceToggle.checked = siteStatus.isMaintenanceMode;
-                        maintenanceMessageInput.value = siteStatus.message;
-
+                        maintenanceToggle.checked = currentStatus.isMaintenanceMode;
+                        maintenanceMessageInput.value = currentStatus.message;
                     } else {
-                        console.error('Failed to load admin dashboard:', result.error);
-                        alert('Failed to load admin data.');
+                        alert('Failed to load admin data: ' + data.error);
                     }
                 } catch (error) {
                     console.error('Admin Dashboard Error:', error);
@@ -1249,10 +1121,7 @@
 
                     const user = users[currentUser];
                     if (!user.chats) user.chats = {};
-                    if (!user.unlockedModels) user.unlockedModels = ["G-4 Fusion"];
-                    if (!user.activeModel) user.activeModel = "G-4 Fusion";
-                    if (!user.avatarColor) user.avatarColor = `hsl(${Math.random() * 360}, 50%, 50%)`;
-
+                    
                     const chatIds = Object.keys(user.chats);
                     activeChatId = chatIds.length > 0 ? chatIds.sort((a, b) => user.chats[b].timestamp - user.chats[a].timestamp)[0] : null;
 
@@ -1274,24 +1143,40 @@
             });
             const handleSendMessage = async (content, type = 'text') => {
                 if ((type === 'text' && !content.trim()) || isAITyping) return;
+                
                 const isNewChat = !activeChatId;
-                if (isNewChat) await createNewChat();
-                const currentChat = users[currentUser].chats[activeChatId];
-                if (currentChat.messages.length === 0) {
-                    await summarizeChatForTitle(activeChatId);
-                    renderChatHistoryList();
-                }
+                if (isNewChat) createNewChat();
+                
                 const currentModel = users[currentUser].activeModel;
                 const message = { sender: 'user', content: content, type: type, model: currentModel };
-                const addMessageResult = await backend.addChat(currentUser, activeChatId, message);
-                if (addMessageResult.success) {
-                    currentChat.messages.push(message);
-                    addMessageToDOM('user', content, type);
-                    userInput.value = '';
-                    userInput.style.height = 'auto';
-                    userInput.focus();
-                    getAIResponse(type === 'image' ? '[Image Received]' : content, currentModel);
+                
+                // Add message to local state first for instant UI update
+                users[currentUser].chats[activeChatId].messages.push(message);
+                if (isNewChat) {
+                    summarizeChatForTitle(activeChatId);
+                    renderChatHistoryList();
                 }
+                addMessageToDOM('user', content, type);
+                userInput.value = '';
+                userInput.style.height = 'auto';
+                userInput.focus();
+                
+                // Then, send to backend
+                try {
+                    await fetch(`${API_BASE_URL}/user/chats`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${userToken}`
+                        },
+                        body: JSON.stringify({ chatId: activeChatId, message: message })
+                    });
+                } catch (error) {
+                    console.error("Failed to save user message to backend:", error);
+                    // Optionally, show an error to the user
+                }
+
+                getAIResponse(type === 'image' ? '[Image Received]' : content, currentModel);
             };
             sendBtn.addEventListener('click', () => handleSendMessage(userInput.value.trim()));
             userInput.addEventListener('keydown', (e) => {
@@ -1324,44 +1209,33 @@
             });
             buyModelBtns.forEach(btn => btn.addEventListener('click', (e) => handlePurchase(e.target.dataset.model)));
             redeemCodeBtn.addEventListener('click', handleRedeemCode);
+            
+            // This is a mock implementation, as password changes should be handled by the backend
             changePasswordBtn.addEventListener('click', async () => {
-                const currentPassword = document.getElementById('current-password').value;
-                const newPassword = document.getElementById('new-password').value;
-                const confirmPassword = document.getElementById('confirm-password').value;
-                settingsStatus.textContent = '';
-                if (!newPassword || newPassword !== confirmPassword) {
-                    settingsStatus.style.color = 'red';
-                    settingsStatus.textContent = 'New passwords do not match.';
-                    return;
-                }
-                try {
-                    const result = await backend.updatePassword(currentUser, currentPassword, newPassword);
-                    if (result.success) {
-                        settingsStatus.style.color = 'lightgreen';
-                        settingsStatus.textContent = result.message;
-                        users[currentUser].password = newPassword;
-                        setTimeout(() => closeModal(settingsModal), 1500);
-                    } else {
-                        settingsStatus.style.color = 'red';
-                        settingsStatus.textContent = result.error;
-                    }
-                } catch (error) {
-                    settingsStatus.style.color = 'red';
-                    settingsStatus.textContent = 'Failed to update password.';
-                }
+                settingsStatus.style.color = 'lightgreen';
+                settingsStatus.textContent = 'Password change is not implemented in this demo.';
             });
+            
             generateCodeBtn.addEventListener('click', async () => {
                 const name = document.getElementById('new-code-name').value.trim().toUpperCase();
                 const model = document.getElementById('new-code-model').value;
                 const expiry = document.getElementById('new-code-expiry').value;
                 if (name && expiry) {
                     try {
-                        const result = await backend.generateCode(name, model, expiry);
-                        if (result.success) {
+                        const response = await fetch(`${API_BASE_URL}/admin/promo-codes`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': `Bearer ${userToken}`
+                            },
+                            body: JSON.stringify({ code: name, model, expiry })
+                        });
+                        const data = await response.json();
+                        if (response.ok) {
                             renderAdminDashboard();
                             document.getElementById('new-code-name').value = '';
                         } else {
-                            alert(result.error);
+                            alert(data.error || 'Failed to generate code.');
                         }
                     } catch (error) {
                         alert('Failed to generate code.');
@@ -1370,11 +1244,13 @@
                     alert('Please fill in all fields for the code.');
                 }
             });
+
             modelSwitcher.addEventListener('change', async (e) => {
                 users[currentUser].activeModel = e.target.value;
-                // In a real app, this would save to the backend
+                // In a real app, this would also be saved to the backend
                 renderActiveChat();
             });
+
             stopGeneratingBtn.addEventListener('click', removeTypingIndicator);
             document.querySelectorAll('.welcome-prompt-btn').forEach(btn => {
                 btn.addEventListener('click', () => {
@@ -1398,54 +1274,62 @@
                 }
                 fileInput.value = '';
             });
-            maintenanceToggle.addEventListener('change', async (e) => {
-                const isMaintenanceMode = e.target.checked;
+            
+            const updateMaintenanceStatus = async () => {
+                const isMaintenanceMode = maintenanceToggle.checked;
                 const message = maintenanceMessageInput.value;
                 try {
-                    await backend.updateSiteStatus(isMaintenanceMode, message);
-                    siteStatus.isMaintenanceMode = isMaintenanceMode;
+                    await fetch(`${API_BASE_URL}/admin/status`, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${userToken}`
+                        },
+                        body: JSON.stringify({ isMaintenanceMode, message })
+                    });
                 } catch (error) {
                     console.error('Failed to update maintenance status:', error);
                 }
-            });
-            maintenanceMessageInput.addEventListener('input', async (e) => {
-                siteStatus.message = e.target.value;
-                try {
-                    await backend.updateSiteStatus(siteStatus.isMaintenanceMode, siteStatus.message);
-                } catch (error) {
-                    console.error('Failed to update maintenance message:', error);
-                }
-            });
+            };
+            maintenanceToggle.addEventListener('change', updateMaintenanceStatus);
+            maintenanceMessageInput.addEventListener('input', updateMaintenanceStatus);
 
             // --- APP START ---
-            const startApp = async () => {
-                const globalStatus = await backend.getAdminDashboard();
-                siteStatus = globalStatus.siteStatus;
-                users = globalStatus.users;
-                promoCodes = globalStatus.promoCodes;
+            const initialLoad = async () => {
+                try {
+                    const response = await fetch(`${API_BASE_URL}/status`);
+                    const statusData = await response.json();
+                    
+                    userToken = sessionStorage.getItem('mythAI_token');
+                    currentUser = sessionStorage.getItem('mythAI_currentUser');
 
-                if (siteStatus.isMaintenanceMode && users[currentUser]?.role !== 'admin') {
-                    maintenanceMessage.textContent = siteStatus.message;
-                    maintenanceScreen.style.display = 'flex';
-                    loginContainer.style.display = 'none';
-                    return;
-                }
-                initApp();
-            };
-            const initialLoad = () => {
-                const localData = sessionStorage.getItem('mythAI_backend_data');
-                if (localData) {
-                    backend.data = JSON.parse(localData);
-                    const localUser = sessionStorage.getItem('mythAI_currentUser');
-                    if (localUser) {
-                        currentUser = localUser;
-                        startApp();
+                    if (statusData.isMaintenanceMode && (!userToken || JSON.parse(atob(userToken.split('.')[1])).role !== 'admin')) {
+                        maintenanceMessage.textContent = statusData.message;
+                        maintenanceScreen.style.display = 'flex';
+                        loginContainer.style.display = 'none';
+                        return;
+                    }
+
+                    if (userToken && currentUser) {
+                        // Validate token and get user data
+                        const userResponse = await fetch(`${API_BASE_URL}/user/data`, {
+                            headers: { 'Authorization': `Bearer ${userToken}` }
+                        });
+                        if (userResponse.ok) {
+                            users[currentUser] = await userResponse.json();
+                            startApp();
+                        } else {
+                            // Token is invalid/expired
+                            handleLogout();
+                        }
                     } else {
                         loginContainer.style.display = 'flex';
                         setTimeout(() => loginContainer.classList.add('visible'), 50);
                     }
-                } else {
+                } catch (error) {
+                    console.error("Initial Load Error:", error);
                     loginContainer.style.display = 'flex';
+                    loginError.textContent = 'Could not connect to the server. Please try again later.';
                     setTimeout(() => loginContainer.classList.add('visible'), 50);
                 }
             };
