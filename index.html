@@ -76,7 +76,6 @@
 
         .typing-indicator-logo .shape {
             stroke: #60a5fa;
-            /* A nice blue color */
             stroke-width: 2;
             fill: none;
             stroke-dasharray: 1000;
@@ -611,7 +610,7 @@
             let isAITyping = false;
             let aiResponseTimeout = null;
 
-            // --- DOM ELEMENTS ---
+            // --- DOM ELEMENTS (General) ---
             const appWrapper = document.getElementById('app-wrapper');
             const adminDashboard = document.getElementById('admin-dashboard');
             const loginContainer = document.getElementById('login-container');
@@ -639,20 +638,6 @@
             const privacyPolicyBtn = document.getElementById('privacy-policy-btn');
             const upgradeBtn = document.getElementById('upgrade-btn');
             const settingsBtn = document.getElementById('settings-btn');
-            const upgradeModal = document.getElementById('upgrade-modal');
-            const privacyModal = document.getElementById('privacy-modal');
-            const settingsModal = document.getElementById('settings-modal');
-            const buyModelBtns = document.querySelectorAll('.buy-model-btn');
-            const promoCodeInput = document.getElementById('promo-code-input');
-            const redeemCodeBtn = document.getElementById('redeem-code-btn');
-            const redeemStatus = document.getElementById('redeem-status');
-            const generateCodeBtn = document.getElementById('generate-code-btn');
-            const activeCodesTable = document.getElementById('active-codes-table');
-            const adminUserList = document.getElementById('admin-user-list');
-            const maintenanceToggle = document.getElementById('maintenance-toggle');
-            const maintenanceMessageInput = document.getElementById('maintenance-message-input');
-            const changePasswordBtn = document.getElementById('change-password-btn');
-            const settingsStatus = document.getElementById('settings-status');
             const stopGeneratingContainer = document.getElementById('stop-generating-container');
             const stopGeneratingBtn = document.getElementById('stop-generating-btn');
             const fileInput = document.getElementById('file-input-hidden');
@@ -660,7 +645,7 @@
             const modelSwitcher = document.getElementById('model-switcher');
 
             // --- API CONFIGURATION ---
-            const API_BASE_URL = 'https://server-9awj.onrender.com/api';
+            const API_BASE_URL = 'https://server-1-0-0-k25z.onrender.com/api';
 
             // --- UI & RENDERING ---
             const toggleSidebar = (forceClose = false) => {
@@ -710,6 +695,7 @@
                 if (!activeChatId || !users[currentUser]?.chats[activeChatId]) {
                     welcomeAvatar.textContent = currentUser.charAt(0).toUpperCase();
                     welcomeAvatar.style.backgroundColor = users[currentUser].avatarColor;
+                    chatWindow.appendChild(welcomeScreen);
                     welcomeScreen.style.display = 'flex';
                     aiModelName.textContent = `Myth AI`;
                     return;
@@ -1005,10 +991,13 @@
             // --- UPGRADE & ADMIN LOGIC ---
             const handlePurchase = async (modelName) => {
                 alert(`In a real application, this would trigger a purchase flow for ${modelName}.`);
+                const upgradeModal = document.getElementById('upgrade-modal');
                 closeModal(upgradeModal);
             };
 
             const handleRedeemCode = async () => {
+                const promoCodeInput = document.getElementById('promo-code-input');
+                const redeemStatus = document.getElementById('redeem-status');
                 const code = promoCodeInput.value.trim().toUpperCase();
                 redeemStatus.textContent = '';
                 if (!code) {
@@ -1057,6 +1046,7 @@
                         document.getElementById('admin-total-chats').textContent = totalChats;
                         document.getElementById('admin-active-codes').textContent = activeCodes;
 
+                        const adminUserList = document.getElementById('admin-user-list');
                         adminUserList.innerHTML = '';
                         Object.keys(allUsers).filter(u => u !== 'admin').forEach(username => {
                             const div = document.createElement('div');
@@ -1065,6 +1055,7 @@
                             adminUserList.appendChild(div);
                         });
 
+                        const activeCodesTable = document.getElementById('active-codes-table');
                         activeCodesTable.innerHTML = '';
                         Object.keys(allCodes).forEach(code => {
                             const codeData = allCodes[code];
@@ -1092,8 +1083,8 @@
                             });
                         });
 
-                        maintenanceToggle.checked = currentStatus.isMaintenanceMode;
-                        maintenanceMessageInput.value = currentStatus.message;
+                        document.getElementById('maintenance-toggle').checked = currentStatus.isMaintenanceMode;
+                        document.getElementById('maintenance-message-input').value = currentStatus.message;
                     } else {
                         alert('Failed to load admin data: ' + data.error);
                     }
@@ -1131,6 +1122,60 @@
                 }
             };
 
+            const setupAdminEventListeners = () => {
+                const generateCodeBtn = document.getElementById('generate-code-btn');
+                const maintenanceToggle = document.getElementById('maintenance-toggle');
+                const maintenanceMessageInput = document.getElementById('maintenance-message-input');
+
+                generateCodeBtn.addEventListener('click', async () => {
+                    const name = document.getElementById('new-code-name').value.trim().toUpperCase();
+                    const model = document.getElementById('new-code-model').value;
+                    const expiry = document.getElementById('new-code-expiry').value;
+                    if (name && expiry) {
+                        try {
+                            const response = await fetch(`${API_BASE_URL}/admin/promo-codes`, {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'Authorization': `Bearer ${userToken}`
+                                },
+                                body: JSON.stringify({ code: name, model, expiry })
+                            });
+                            const data = await response.json();
+                            if (response.ok) {
+                                renderAdminDashboard();
+                                document.getElementById('new-code-name').value = '';
+                            } else {
+                                alert(data.error || 'Failed to generate code.');
+                            }
+                        } catch (error) {
+                            alert('Failed to generate code.');
+                        }
+                    } else {
+                        alert('Please fill in all fields for the code.');
+                    }
+                });
+
+                const updateMaintenanceStatus = async () => {
+                    const isMaintenanceMode = maintenanceToggle.checked;
+                    const message = maintenanceMessageInput.value;
+                    try {
+                        await fetch(`${API_BASE_URL}/admin/status`, {
+                            method: 'PUT',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': `Bearer ${userToken}`
+                            },
+                            body: JSON.stringify({ isMaintenanceMode, message })
+                        });
+                    } catch (error) {
+                        console.error('Failed to update maintenance status:', error);
+                    }
+                };
+                maintenanceToggle.addEventListener('change', updateMaintenanceStatus);
+                maintenanceMessageInput.addEventListener('input', updateMaintenanceStatus);
+            };
+
             // --- EVENT LISTENERS ---
             emailLoginForm.addEventListener('submit', handleEmailLogin);
             googleLoginBtn.addEventListener('click', () => handleSocialLogin('google'));
@@ -1150,7 +1195,6 @@
                 const currentModel = users[currentUser].activeModel;
                 const message = { sender: 'user', content: content, type: type, model: currentModel };
                 
-                // Add message to local state first for instant UI update
                 users[currentUser].chats[activeChatId].messages.push(message);
                 if (isNewChat) {
                     summarizeChatForTitle(activeChatId);
@@ -1161,7 +1205,6 @@
                 userInput.style.height = 'auto';
                 userInput.focus();
                 
-                // Then, send to backend
                 try {
                     await fetch(`${API_BASE_URL}/user/chats`, {
                         method: 'POST',
@@ -1173,7 +1216,6 @@
                     });
                 } catch (error) {
                     console.error("Failed to save user message to backend:", error);
-                    // Optionally, show an error to the user
                 }
 
                 getAIResponse(type === 'image' ? '[Image Received]' : content, currentModel);
@@ -1193,10 +1235,15 @@
             });
             menuToggleBtn.addEventListener('click', () => toggleSidebar());
             sidebarOverlay.addEventListener('click', () => toggleSidebar(true));
+            
+            const upgradeModal = document.getElementById('upgrade-modal');
+            const privacyModal = document.getElementById('privacy-modal');
+            const settingsModal = document.getElementById('settings-modal');
+
             upgradeBtn.addEventListener('click', () => openModal(upgradeModal));
             privacyPolicyBtn.addEventListener('click', () => openModal(privacyModal));
             settingsBtn.addEventListener('click', async () => {
-                settingsStatus.textContent = '';
+                document.getElementById('settings-status').textContent = '';
                 document.getElementById('current-password').value = '';
                 document.getElementById('new-password').value = '';
                 document.getElementById('confirm-password').value = '';
@@ -1207,47 +1254,16 @@
                     closeModal(e.currentTarget.closest('.fixed'));
                 });
             });
-            buyModelBtns.forEach(btn => btn.addEventListener('click', (e) => handlePurchase(e.target.dataset.model)));
-            redeemCodeBtn.addEventListener('click', handleRedeemCode);
+            document.querySelectorAll('.buy-model-btn').forEach(btn => btn.addEventListener('click', (e) => handlePurchase(e.target.dataset.model)));
+            document.getElementById('redeem-code-btn').addEventListener('click', handleRedeemCode);
             
-            // This is a mock implementation, as password changes should be handled by the backend
-            changePasswordBtn.addEventListener('click', async () => {
-                settingsStatus.style.color = 'lightgreen';
-                settingsStatus.textContent = 'Password change is not implemented in this demo.';
+            document.getElementById('change-password-btn').addEventListener('click', async () => {
+                document.getElementById('settings-status').style.color = 'lightgreen';
+                document.getElementById('settings-status').textContent = 'Password change is not implemented in this demo.';
             });
             
-            generateCodeBtn.addEventListener('click', async () => {
-                const name = document.getElementById('new-code-name').value.trim().toUpperCase();
-                const model = document.getElementById('new-code-model').value;
-                const expiry = document.getElementById('new-code-expiry').value;
-                if (name && expiry) {
-                    try {
-                        const response = await fetch(`${API_BASE_URL}/admin/promo-codes`, {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'Authorization': `Bearer ${userToken}`
-                            },
-                            body: JSON.stringify({ code: name, model, expiry })
-                        });
-                        const data = await response.json();
-                        if (response.ok) {
-                            renderAdminDashboard();
-                            document.getElementById('new-code-name').value = '';
-                        } else {
-                            alert(data.error || 'Failed to generate code.');
-                        }
-                    } catch (error) {
-                        alert('Failed to generate code.');
-                    }
-                } else {
-                    alert('Please fill in all fields for the code.');
-                }
-            });
-
             modelSwitcher.addEventListener('change', async (e) => {
                 users[currentUser].activeModel = e.target.value;
-                // In a real app, this would also be saved to the backend
                 renderActiveChat();
             });
 
@@ -1275,26 +1291,14 @@
                 fileInput.value = '';
             });
             
-            const updateMaintenanceStatus = async () => {
-                const isMaintenanceMode = maintenanceToggle.checked;
-                const message = maintenanceMessageInput.value;
-                try {
-                    await fetch(`${API_BASE_URL}/admin/status`, {
-                        method: 'PUT',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${userToken}`
-                        },
-                        body: JSON.stringify({ isMaintenanceMode, message })
-                    });
-                } catch (error) {
-                    console.error('Failed to update maintenance status:', error);
-                }
-            };
-            maintenanceToggle.addEventListener('change', updateMaintenanceStatus);
-            maintenanceMessageInput.addEventListener('input', updateMaintenanceStatus);
-
             // --- APP START ---
+            const startApp = () => {
+                if (users[currentUser]?.role === 'admin') {
+                    setupAdminEventListeners();
+                }
+                initApp();
+            };
+
             const initialLoad = async () => {
                 try {
                     const response = await fetch(`${API_BASE_URL}/status`);
@@ -1304,14 +1308,13 @@
                     currentUser = sessionStorage.getItem('mythAI_currentUser');
 
                     if (statusData.isMaintenanceMode && (!userToken || JSON.parse(atob(userToken.split('.')[1])).role !== 'admin')) {
-                        maintenanceMessage.textContent = statusData.message;
-                        maintenanceScreen.style.display = 'flex';
-                        loginContainer.style.display = 'none';
+                        document.getElementById('maintenance-message').textContent = statusData.message;
+                        document.getElementById('maintenance-screen').style.display = 'flex';
+                        document.getElementById('login-container').style.display = 'none';
                         return;
                     }
 
                     if (userToken && currentUser) {
-                        // Validate token and get user data
                         const userResponse = await fetch(`${API_BASE_URL}/user/data`, {
                             headers: { 'Authorization': `Bearer ${userToken}` }
                         });
@@ -1319,7 +1322,6 @@
                             users[currentUser] = await userResponse.json();
                             startApp();
                         } else {
-                            // Token is invalid/expired
                             handleLogout();
                         }
                     } else {
@@ -1329,7 +1331,7 @@
                 } catch (error) {
                     console.error("Initial Load Error:", error);
                     loginContainer.style.display = 'flex';
-                    loginError.textContent = 'Could not connect to the server. Please try again later.';
+                    document.getElementById('login-error').textContent = 'Could not connect to the server. Please try again later.';
                     setTimeout(() => loginContainer.classList.add('visible'), 50);
                 }
             };
@@ -1340,3 +1342,4 @@
 </body>
 
 </html>
+
